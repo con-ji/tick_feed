@@ -78,16 +78,21 @@ async def replay():
     cur = conn.cursor()
 
     # Load each historical message into sqlite DB
-    msgs = []
+    last_msg = {}
+    last_minute = 0
     async for local_timestamp, message in messages:
         # We only really care about the message here
         data = message['params']['data']
-        print("inserting historical data")
-        cur.execute(INSERT_QUERY,
-                (data['timestamp'], data['instrument_name'],
-                 data['best_bid_price'], data['best_bid_price'],
-                 data['best_ask_price'], data['best_ask_amount']))
-        conn.commit()
+        curr_minute = data['timestamp'] - data['timestamp'] % 60000
+        if curr_minute > last_minute:
+            if last_msg:
+                cur.execute(INSERT_QUERY,
+                        (last_minute, last_msg['instrument_name'],
+                         last_msg['best_bid_price'], last_msg['best_bid_price'],
+                         last_msg['best_ask_price'], last_msg['best_ask_amount']))
+                conn.commit()
+            last_minute = curr_minute
+        last_msg = data
     conn.close()
 
 
@@ -112,20 +117,26 @@ async def live_feed():
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
 
-    # Real time quotes from derebit
+    last_msg = {}
+    last_minute = 0
+    # Real time quotes from deribit
     async with aiohttp.ClientSession() as session:
         async with session.ws_connect(URL) as websocket:
             async for msg in websocket:
                 data = json.loads(msg.data)
                 ts = ciso8601.parse_datetime(data['timestamp'])
                 timestamp = int(ts.timestamp() * 1000)
-                print("inserting live data")
-                cur.execute(
-                    INSERT_QUERY,
-                    (timestamp, data['symbol'],
-                     data['bids'][0]['price'], data['bids'][0]['amount'],
-                     data['asks'][0]['price'], data['asks'][0]['amount']))
-                conn.commit()
+                curr_minute = timestamp - timestamp % 60000
+                if curr_minute > last_minute:
+                    if last_msg:
+                        cur.execute(
+                            INSERT_QUERY,
+                            (timestamp, data['symbol'],
+                             data['bids'][0]['price'], data['bids'][0]['amount'],
+                             data['asks'][0]['price'], data['asks'][0]['amount']))
+                        conn.commit()
+                    last_minute = curr_minute
+                last_msg = data
     conn.close()
 
 
