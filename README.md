@@ -16,14 +16,14 @@ Currently, the scripts:
 	```
 3. Set up the `sqlite` DB:
 	```
-	python3 tick_feed/create_db.py
+	python3 tick_feed/create_db.py --exchange EXCHANGE
 	```
-4. Start the tick feed loading:
+4. Start the tick feed loading (exchange must match the exchange created by `create_db.py`):
 	```
 	python3 tick_feed/tick_feed.py --exchange EXCHANGE --symbols SYMBOL_1 SYMBOL_2 --data-types DATA_TYPE_1 --DATA_TYPE_2 [--dry-run]
 	```
 
 ### TODO
 - [x] Use normalized historical data feed
-- [ ] Parameterize exchange, query fields. This might get weird due to different symbols and ["normalized data types"](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
+- [x] Parameterize exchange, query fields. This might get weird due to different symbols and ["normalized data types"](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
 - [x] Add `setup.py` and easier setup scripts
