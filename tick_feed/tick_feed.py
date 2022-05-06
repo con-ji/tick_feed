@@ -2,6 +2,9 @@
 Scripts to:
     1. Load deribit BTC USD perpetual quotes into a sqlite DB
     2. Stream and load derebit BTC USD perpetual quotes into the same sqlite DB
+TODO:
+    1. Use normalized replay data
+    2. Pass in arguments for exchanges, symbols
 """
 import asyncio
 import aiohttp
