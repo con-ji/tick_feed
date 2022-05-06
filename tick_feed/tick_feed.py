@@ -5,6 +5,7 @@ Scripts to:
 TODO:
     1. Pass in arguments for exchanges, symbols (requires generating tables, or normalizing things)
 """
+import argparse
 import asyncio
 import datetime
 import json
@@ -15,7 +16,7 @@ import aiohttp
 import ciso8601
 
 
-INSERT_QUERY = "INSERT OR IGNORE INTO deribit_perp_quotes VALUES (?, ?, ?, ?, ?, ?)"
+INSERT_QUERY = "INSERT OR IGNORE INTO {exchange}_ticks VALUES (?, ?, ?, ?, ?, ?)"
 
 
 async def replay_normalized_via_tardis_machine(replay_options):
@@ -35,19 +36,24 @@ async def replay_normalized_via_tardis_machine(replay_options):
                 yield line
 
 
-async def replay_normalized():
+async def replay_normalized(exchange, symbols, data_types, dry_run):
     """
     Loads historical minute-by-minute ticks into a sqlite DB for BTC USD perpetual quotes.
+
+    :param exchange (str): exchange to pull data from
+    :param symbols (List[str]): list of symbols to pull data for
+    :param data_types (List[str]): list of Tardis data types to pull for
+    :param dry_run (bool): if true, doesn't load to DB - prints to stdout
     """
     today = datetime.datetime.now()
     week_ago = datetime.date.today() - datetime.timedelta(days=7)
 
     messages = replay_normalized_via_tardis_machine({
-        'exchange': 'deribit',
+        'exchange': exchange,
         'from': week_ago.isoformat(),
         'to': today.isoformat(),
-        'symbols': ["BTC-PERPETUAL"],
-        'dataTypes': ['quote'],
+        'symbols': symbols,
+        'dataTypes': data_types,
     })
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
@@ -62,28 +68,35 @@ async def replay_normalized():
         curr_minute = timestamp - timestamp % 60000
         if curr_minute > last_minute:
             if last_msg:
-                print('inserting historical data')
-                cur.execute(INSERT_QUERY,
-                        (last_minute, last_msg['symbol'],
-                         last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
-                         last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
-                conn.commit()
+                if not dry_run:
+                    cur.execute(INSERT_QUERY.format(exchange=exchange),
+                            (last_minute, last_msg['symbol'],
+                             last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
+                             last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
+                    conn.commit()
+                else:
+                    print(last_minute, last_msg)
             last_minute = curr_minute
         last_msg = data
     conn.close()
 
 
 
-async def live_feed():
+async def live_feed(exchange, symbols, data_types, dry_run):
     """
     Streams live feed ticks from deribit for BTC USD perpetual quotes.
     Loads the messages into a sqlite DB.
+
+    :param exchange (str): exchange to pull data from
+    :param symbols (List[str]): list of symbols to pull data for
+    :param data_types (List[str]): list of Tardis data types to pull for
+    :param dry_run (bool): if true, doesn't load to DB - prints to stdout
     """
     stream_options = [
         {
-            "exchange": "deribit",
-            "symbols": ["BTC-PERPETUAL"],
-            "dataTypes": ["quote"],
+            "exchange": exchange,
+            "symbols": symbols,
+            "dataTypes": data_types,
         },
     ]
 
@@ -105,13 +118,14 @@ async def live_feed():
                 curr_minute = timestamp - timestamp % 60000
                 if curr_minute > last_minute:
                     if last_msg:
-                        print('inserting live data')
-                        cur.execute(
-                            INSERT_QUERY,
-                            (last_minute, last_msg['symbol'],
-                             last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
-                             last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
-                        conn.commit()
+                        if not dry_run:
+                            cur.execute(INSERT_QUERY.format(exchange=exchange),
+                                (last_minute, last_msg['symbol'],
+                                 last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
+                                 last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
+                            conn.commit()
+                        else:
+                            print(last_minute, last_msg)
                     last_minute = curr_minute
                 last_msg = data
     conn.close()
@@ -121,8 +135,23 @@ async def main():
     """
     Spawns a coroutine for each task (live and replay), and runs them concurrently.
     """
-    live_task = asyncio.create_task(live_feed())
-    replay_task = asyncio.create_task(replay_normalized())
+    parser = argparse.ArgumentParser(
+        description='Load historical and live crypto exchange minute tick data')
+    parser.add_argument('--exchange', required=True,
+        help='exchange to pull ticks from')
+    parser.add_argument('--symbols', required=True, nargs='+',
+        help='symbol(s) to pull ticks for, e.g. BTC-PERPETUAL or ETHUSD')
+    parser.add_argument('--data-types', required=True, nargs='+',
+        help='data type(s): https://docs.tardis.dev/api/tardis-machine#normalized-data-types')
+    parser.add_argument('--dry-run',
+        action='store_true',
+        help='if true, print ticks to stdout instead of loading into DB')
+    args = parser.parse_args()
+
+    live_task = asyncio.create_task(live_feed(
+        args.exchange, args.symbols, args.data_types, args.dry_run))
+    replay_task = asyncio.create_task(replay_normalized(
+        args.exchange, args.symbols, args.data_types, args.dry_run))
     await live_task
     await replay_task
 

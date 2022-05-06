@@ -20,7 +20,7 @@ Currently, the scripts:
 	```
 4. Start the tick feed loading:
 	```
-	python3 tick_feed/tick_feed.py
+	python3 tick_feed/tick_feed.py --exchange EXCHANGE --symbols SYMBOL_1 SYMBOL_2 --data-types DATA_TYPE_1 --DATA_TYPE_2 [--dry-run]
 	```
 
 ### TODO
