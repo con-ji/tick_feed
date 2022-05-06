@@ -26,73 +26,54 @@ DATE_FMT = '%Y-%m-%d'
 INSERT_QUERY = "INSERT OR IGNORE INTO deribit_perp_quotes VALUES (?, ?, ?, ?, ?, ?)"
 
 
-async def replay_full_load():
-    """
-    Pulls historical data for BTCUSD perpetual quotes from deribit.
-    Loads the messages into a sqlite DB from a single dataframe.
-    """
-    tardis_client = TardisClient(api_key=API_KEY)
-    today = datetime.date.today() + datetime.timedelta(days=1)
-    week_ago = today - datetime.timedelta(days=1)
+async def replay_normalized_via_tardis_machine(replay_options):
+    timeout = aiohttp.ClientTimeout(total=0)
 
-    messages = tardis_client.replay(
-        exchange='deribit',
-        from_date=week_ago.strftime(DATE_FMT),
-        to_date=today.strftime(DATE_FMT),
-        filters=[Channel(name="quote", symbols=["BTC-PERPETUAL"])],
-    )
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        # url encode as json object options
+        encoded_options = urllib.parse.quote_plus(json.dumps(replay_options))
 
-    conn = sqlite3.connect('tick_feed.db')
+        # assumes tardis-machine HTTP API running on localhost:8000
+        url = f"http://localhost:8000/replay-normalized?options={encoded_options}"
 
-    msgs = []
-    async for local_timestamp, message in messages:
-        data = message['params']['data']
-        data_dict = {
-                'timestamp': data['timestamp'],
-                'instrument_name': data['instrument_name'],
-                'bid_price': data['best_bid_price'],
-                'bid_amount': data['best_bid_amount'],
-                'ask_price': data['best_ask_price'],
-                'ask_amount': data['best_ask_amount'],
-        }
-        msgs.append(data_dict)
-    msgs_df = pd.DataFrame(msgs, columns=cols)
-    msgs_df.to_sql('deribit_perp_quotes', conn, if_exists='replace', index=False)
-    conn.close()
+        async with session.get(url) as response:
+            # otherwise we may get line too long errors
+            response.content._high_water = 100_000_000
+
+            async for line in response.content:
+                yield line
 
 
-async def replay():
-    """
-    Pulls historical data for BTCUSD perpetual quotes from deribit.
-    Loads the messages into a sqlite DB from a single dataframe.
-    """
-    tardis_client = TardisClient(api_key=API_KEY)
-    today = datetime.date.today() + datetime.timedelta(days=1)
-    week_ago = today - datetime.timedelta(days=8)
+async def replay_normalized():
+    today = datetime.datetime.now()
+    week_ago = datetime.date.today() - datetime.timedelta(days=7)
 
-    messages = tardis_client.replay(
-        exchange='deribit',
-        from_date=week_ago.strftime(DATE_FMT),
-        to_date=today.strftime(DATE_FMT),
-        filters=[Channel(name="quote", symbols=["BTC-PERPETUAL"])],
-    )
-
+    messages = replay_normalized_via_tardis_machine({
+        'exchange': 'deribit',
+        'from': week_ago.isoformat(),
+        'to': today.isoformat(),
+        'symbols': ["BTC-PERPETUAL"],
+        'dataTypes': ['quote'],
+    })
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
 
     # Load each historical message into sqlite DB
     last_msg = {}
     last_minute = 0
-    async for local_timestamp, message in messages:
+    async for message in messages:
         # We only really care about the message here
-        data = message['params']['data']
-        curr_minute = data['timestamp'] - data['timestamp'] % 60000
+        data = json.loads(message)
+        ts = ciso8601.parse_datetime(data['timestamp'])
+        timestamp = int(ts.timestamp() * 1000)
+        curr_minute = timestamp - timestamp % 60000
         if curr_minute > last_minute:
             if last_msg:
+                print('inserting historical data')
                 cur.execute(INSERT_QUERY,
-                        (last_minute, last_msg['instrument_name'],
-                         last_msg['best_bid_price'], last_msg['best_bid_price'],
-                         last_msg['best_ask_price'], last_msg['best_ask_amount']))
+                        (last_minute, last_msg['symbol'],
+                         last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
+                         last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
                 conn.commit()
             last_minute = curr_minute
         last_msg = data
@@ -132,11 +113,12 @@ async def live_feed():
                 curr_minute = timestamp - timestamp % 60000
                 if curr_minute > last_minute:
                     if last_msg:
+                        print('inserting live data')
                         cur.execute(
                             INSERT_QUERY,
-                            (timestamp, data['symbol'],
-                             data['bids'][0]['price'], data['bids'][0]['amount'],
-                             data['asks'][0]['price'], data['asks'][0]['amount']))
+                            (last_minute, last_msg['symbol'],
+                             last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
+                             last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
                         conn.commit()
                     last_minute = curr_minute
                 last_msg = data
@@ -145,8 +127,8 @@ async def live_feed():
 
 async def main():
     live_task = asyncio.create_task(live_feed())
-    replay_task = asyncio.create_task(replay())
-    await live_feed()
-    await replay()
+    replay_task = asyncio.create_task(replay_normalized())
+    await live_task
+    await replay_task
 
 asyncio.run(main())
