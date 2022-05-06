@@ -6,6 +6,6 @@ Currently, the scripts:
 3. Maintains an open connection and loads live ticks into the DB
 
 ### TODO
-- [] Use normalized historical data feed
-- [] Parameterize exchange, query fields
-- [] Add `setup.py` and easier setup scripts
+- [ ] Use normalized historical data feed
+- [ ] Parameterize exchange, query fields
+- [ ] Add `setup.py` and easier setup scripts
