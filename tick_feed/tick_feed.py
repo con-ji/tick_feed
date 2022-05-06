@@ -15,10 +15,6 @@ import aiohttp
 import ciso8601
 
 
-API_KEY = "TD.bJc2KGlCAGSsssq5.C2vovEEvbOrMct5.M1L1DoachKERl-D.Ao1zF1RSX9yaDqM.v0aqZH57d3qTKmE.7HCI"
-COLS = ['timestamp', 'instrument_name', 'bid_price', 'bid_amount', 'ask_price', 'ask_amount']
-DATE_FMT = '%Y-%m-%d'
-
 INSERT_QUERY = "INSERT OR IGNORE INTO deribit_perp_quotes VALUES (?, ?, ?, ?, ?, ?)"
 
 
