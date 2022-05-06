@@ -1,10 +1,16 @@
+"""
+Small script to set up the sqlite DB for tick loading
+"""
 import sqlite3
 
 
 def create_db():
+    """
+    Creates a local sqlite DB file with a table for deribit perpetual quotes.
+    """
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
-    
+
     # Create table for the tardis messages
     # Primary key will be timestamp since these should always be unique
     cur.execute(

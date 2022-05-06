@@ -6,16 +6,13 @@ TODO:
     1. Pass in arguments for exchanges, symbols (requires generating tables, or normalizing things)
 """
 import asyncio
-import aiohttp
 import datetime
 import json
 import urllib.parse
 import sqlite3
-import time
 
+import aiohttp
 import ciso8601
-import pandas as pd
-from tardis_client import TardisClient, Channel
 
 
 API_KEY = "TD.bJc2KGlCAGSsssq5.C2vovEEvbOrMct5.M1L1DoachKERl-D.Ao1zF1RSX9yaDqM.v0aqZH57d3qTKmE.7HCI"
@@ -26,24 +23,26 @@ INSERT_QUERY = "INSERT OR IGNORE INTO deribit_perp_quotes VALUES (?, ?, ?, ?, ?,
 
 
 async def replay_normalized_via_tardis_machine(replay_options):
+    """
+    Pulls normalized messages from the Tardis Machine image via HTTP API.
+    """
     timeout = aiohttp.ClientTimeout(total=0)
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
-        # url encode as json object options
         encoded_options = urllib.parse.quote_plus(json.dumps(replay_options))
 
         # assumes tardis-machine HTTP API running on localhost:8000
         url = f"http://localhost:8000/replay-normalized?options={encoded_options}"
 
         async with session.get(url) as response:
-            # otherwise we may get line too long errors
-            response.content._high_water = 100_000_000
-
             async for line in response.content:
                 yield line
 
 
 async def replay_normalized():
+    """
+    Loads historical minute-by-minute ticks into a sqlite DB for BTC USD perpetual quotes.
+    """
     today = datetime.datetime.now()
     week_ago = datetime.date.today() - datetime.timedelta(days=7)
 
@@ -63,8 +62,7 @@ async def replay_normalized():
     async for message in messages:
         # We only really care about the message here
         data = json.loads(message)
-        ts = ciso8601.parse_datetime(data['timestamp'])
-        timestamp = int(ts.timestamp() * 1000)
+        timestamp = int(ciso8601.parse_datetime(data['timestamp']).timestamp() * 1000)
         curr_minute = timestamp - timestamp % 60000
         if curr_minute > last_minute:
             if last_msg:
@@ -95,7 +93,7 @@ async def live_feed():
 
     options = urllib.parse.quote_plus(json.dumps(stream_options))
 
-    URL = f"ws://localhost:8001/ws-stream-normalized?options={options}"
+    url = f"ws://localhost:8001/ws-stream-normalized?options={options}"
 
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
@@ -104,11 +102,10 @@ async def live_feed():
     last_minute = 0
     # Real time quotes from deribit
     async with aiohttp.ClientSession() as session:
-        async with session.ws_connect(URL) as websocket:
+        async with session.ws_connect(url) as websocket:
             async for msg in websocket:
                 data = json.loads(msg.data)
-                ts = ciso8601.parse_datetime(data['timestamp'])
-                timestamp = int(ts.timestamp() * 1000)
+                timestamp = int(ciso8601.parse_datetime(data['timestamp']).timestamp() * 1000)
                 curr_minute = timestamp - timestamp % 60000
                 if curr_minute > last_minute:
                     if last_msg:
@@ -125,6 +122,9 @@ async def live_feed():
 
 
 async def main():
+    """
+    Spawns a coroutine for each task (live and replay), and runs them concurrently.
+    """
     live_task = asyncio.create_task(live_feed())
     replay_task = asyncio.create_task(replay_normalized())
     await live_task
