@@ -16,7 +16,7 @@ import aiohttp
 import ciso8601
 
 
-INSERT_QUERY = "INSERT OR IGNORE INTO {exchange}_ticks VALUES (?, ?, ?, ?, ?, ?)"
+INSERT_QUERY = "INSERT OR IGNORE INTO {exchange}_ticks VALUES (?, ?, ?, ?, ?, ?, ?)"
 
 
 async def replay_normalized_via_tardis_machine(replay_options):
@@ -72,7 +72,8 @@ async def replay_normalized(exchange, symbols, data_types, dry_run):
                     cur.execute(INSERT_QUERY.format(exchange=exchange),
                             (last_minute, last_msg['symbol'],
                              last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
-                             last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
+                             last_msg['asks'][0]['price'], last_msg['asks'][0]['amount'],
+                             json.dumps(last_msg)))
                     conn.commit()
                 else:
                     print(last_minute, last_msg)
@@ -122,7 +123,8 @@ async def live_feed(exchange, symbols, data_types, dry_run):
                             cur.execute(INSERT_QUERY.format(exchange=exchange),
                                 (last_minute, last_msg['symbol'],
                                  last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
-                                 last_msg['asks'][0]['price'], last_msg['asks'][0]['amount']))
+                                 last_msg['asks'][0]['price'], last_msg['asks'][0]['amount'],
+                                 json.dumps(last_msg)))
                             conn.commit()
                         else:
                             print(last_minute, last_msg)

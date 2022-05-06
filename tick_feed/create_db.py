@@ -26,6 +26,7 @@ def create_db_table(exchange):
         bid_amount REAL NOT NULL,
         ask_price REAL NOT NULL,
         ask_amount REAL NOT NULL,
+        message TEXT NOT NULL,
         PRIMARY KEY(timestamp, instrument_name, bid_price, bid_amount, ask_price, ask_amount)
         );
         """.format(table=table))
