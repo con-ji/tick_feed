@@ -20,8 +20,13 @@ Currently, the scripts:
 	```
 4. Start the tick feed loading (exchange must match the exchange created by `create_db.py`):
 	```
-	python3 tick_feed/tick_feed.py --exchange EXCHANGE --symbols SYMBOL_1 SYMBOL_2 --data-types DATA_TYPE_1 --DATA_TYPE_2 [--dry-run]
+	python3 tick_feed/tick_feed.py --exchange EXCHANGE --symbols SYMBOL_1 SYMBOL_2 --data-type DATA_TYPE [--dry-run]
 	```
+For example, to get minute level BTCUSD perpetual quotes on deribit:
+```
+python3 tick_feed/create_db.py --exchange deribit --data-type book_snapshot_1_60s
+python3 tick_feed/tick_feed.py --exchange deribit --symbols BTC-PERPETUAL --data-type book_snapshot_1_60s
+```
 
 ### TODO
 - [x] Use normalized historical data feed

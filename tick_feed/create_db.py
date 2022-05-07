@@ -5,16 +5,17 @@ import argparse
 import sqlite3
 
 
-def create_db_table(exchange):
+def create_db_table(exchange, data_type):
     """
     Creates a local sqlite DB file with a table for deribit perpetual quotes.
 
     :param exchange (str): exchange to build a table for
+    :param data_type (str): Tardis data type to pull for
     """
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
 
-    table = '{exchange}_ticks'.format(exchange=exchange)
+    table = '{exchange}_{data_type}_ticks'.format(exchange=exchange, data_type=data_type)
 
     # Create table for the tardis messages
     # Primary key will be timestamp since these should always be unique
@@ -38,8 +39,10 @@ def main():
         description='Load historical and live crypto exchange minute tick data')
     parser.add_argument('--exchange', required=True,
         help='exchange to pull ticks from')
+    parser.add_argument('--data-type', required=True,
+        help='data type: https://docs.tardis.dev/api/tardis-machine#normalized-data-types')
     args = parser.parse_args()
 
-    create_db_table(args.exchange)
+    create_db_table(args.exchange, args.data_type)
 
 main()

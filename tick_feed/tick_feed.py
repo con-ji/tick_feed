@@ -16,7 +16,7 @@ import aiohttp
 import ciso8601
 
 
-INSERT_QUERY = "INSERT OR IGNORE INTO {exchange}_ticks VALUES (?, ?, ?, ?, ?, ?, ?)"
+INSERT_QUERY = "INSERT OR IGNORE INTO {exchange}_{data_type}_ticks VALUES (?, ?, ?, ?, ?, ?, ?)"
 
 
 async def replay_normalized_via_tardis_machine(replay_options):
@@ -36,13 +36,13 @@ async def replay_normalized_via_tardis_machine(replay_options):
                 yield line
 
 
-async def replay_normalized(exchange, symbols, data_types, dry_run):
+async def replay_normalized(exchange, symbols, data_type, dry_run):
     """
     Loads historical minute-by-minute ticks into a sqlite DB for BTC USD perpetual quotes.
 
     :param exchange (str): exchange to pull data from
     :param symbols (List[str]): list of symbols to pull data for
-    :param data_types (List[str]): list of Tardis data types to pull for
+    :param data_type (str): Tardis data type to pull for
     :param dry_run (bool): if true, doesn't load to DB - prints to stdout
     """
     today = datetime.datetime.now()
@@ -53,51 +53,43 @@ async def replay_normalized(exchange, symbols, data_types, dry_run):
         'from': week_ago.isoformat(),
         'to': today.isoformat(),
         'symbols': symbols,
-        'dataTypes': data_types,
+        'dataTypes': [data_type],
     })
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
 
     # Load each historical message into sqlite DB
-    last_msg = {}
-    last_minute = 0
     async for message in messages:
-        # We only really care about the message here
         data = json.loads(message)
         timestamp = int(ciso8601.parse_datetime(data['timestamp']).timestamp() * 1000)
-        curr_minute = timestamp - timestamp % 60000
-        if curr_minute > last_minute:
-            if last_msg:
-                if not dry_run:
-                    cur.execute(INSERT_QUERY.format(exchange=exchange),
-                            (last_minute, last_msg['symbol'],
-                             last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
-                             last_msg['asks'][0]['price'], last_msg['asks'][0]['amount'],
-                             json.dumps(last_msg)))
-                    conn.commit()
-                else:
-                    print(last_minute, last_msg)
-            last_minute = curr_minute
-        last_msg = data
+        if not dry_run:
+            cur.execute(INSERT_QUERY.format(exchange=exchange, data_type=data_type),
+                    (timestamp, data['symbol'],
+                     data['bids'][0]['price'], data['bids'][0]['amount'],
+                     data['asks'][0]['price'], data['asks'][0]['amount'],
+                     json.dumps(data)))
+            conn.commit()
+        else:
+            print(timestamp, data)
     conn.close()
 
 
 
-async def live_feed(exchange, symbols, data_types, dry_run):
+async def live_feed(exchange, symbols, data_type, dry_run):
     """
     Streams live feed ticks from deribit for BTC USD perpetual quotes.
     Loads the messages into a sqlite DB.
 
     :param exchange (str): exchange to pull data from
     :param symbols (List[str]): list of symbols to pull data for
-    :param data_types (List[str]): list of Tardis data types to pull for
+    :param data_type (str): Tardis data type to pull for
     :param dry_run (bool): if true, doesn't load to DB - prints to stdout
     """
     stream_options = [
         {
             "exchange": exchange,
             "symbols": symbols,
-            "dataTypes": data_types,
+            "dataTypes": [data_type],
         },
     ]
 
@@ -108,28 +100,21 @@ async def live_feed(exchange, symbols, data_types, dry_run):
     conn = sqlite3.connect('tick_feed.db')
     cur = conn.cursor()
 
-    last_msg = {}
-    last_minute = 0
     # Real time quotes from deribit
     async with aiohttp.ClientSession() as session:
         async with session.ws_connect(url) as websocket:
             async for msg in websocket:
                 data = json.loads(msg.data)
                 timestamp = int(ciso8601.parse_datetime(data['timestamp']).timestamp() * 1000)
-                curr_minute = timestamp - timestamp % 60000
-                if curr_minute > last_minute:
-                    if last_msg:
-                        if not dry_run:
-                            cur.execute(INSERT_QUERY.format(exchange=exchange),
-                                (last_minute, last_msg['symbol'],
-                                 last_msg['bids'][0]['price'], last_msg['bids'][0]['amount'],
-                                 last_msg['asks'][0]['price'], last_msg['asks'][0]['amount'],
-                                 json.dumps(last_msg)))
-                            conn.commit()
-                        else:
-                            print(last_minute, last_msg)
-                    last_minute = curr_minute
-                last_msg = data
+                if not dry_run:
+                    cur.execute(INSERT_QUERY.format(exchange=exchange, data_type=data_type),
+                        (timestamp, data['symbol'],
+                         data['bids'][0]['price'], data['bids'][0]['amount'],
+                         data['asks'][0]['price'], data['asks'][0]['amount'],
+                         json.dumps(data)))
+                    conn.commit()
+                else:
+                    print(timestamp, data)
     conn.close()
 
 
@@ -143,17 +128,17 @@ async def main():
         help='exchange to pull ticks from')
     parser.add_argument('--symbols', required=True, nargs='+',
         help='symbol(s) to pull ticks for, e.g. BTC-PERPETUAL or ETHUSD')
-    parser.add_argument('--data-types', required=True, nargs='+',
-        help='data type(s): https://docs.tardis.dev/api/tardis-machine#normalized-data-types')
+    parser.add_argument('--data-type', required=True,
+        help='data type: https://docs.tardis.dev/api/tardis-machine#normalized-data-types')
     parser.add_argument('--dry-run',
         action='store_true',
         help='if true, print ticks to stdout instead of loading into DB')
     args = parser.parse_args()
 
     live_task = asyncio.create_task(live_feed(
-        args.exchange, args.symbols, args.data_types, args.dry_run))
+        args.exchange, args.symbols, args.data_type, args.dry_run))
     replay_task = asyncio.create_task(replay_normalized(
-        args.exchange, args.symbols, args.data_types, args.dry_run))
+        args.exchange, args.symbols, args.data_type, args.dry_run))
     await live_task
     await replay_task
 
