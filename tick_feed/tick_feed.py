@@ -1,9 +1,7 @@
 """
 Scripts to:
-    1. Load deribit BTC USD perpetual quotes into a sqlite DB
-    2. Stream and load derebit BTC USD perpetual quotes into the same sqlite DB
-TODO:
-    1. Pass in arguments for exchanges, symbols (requires generating tables, or normalizing things)
+    1. Load exchange/symbol/data type level ticks into a sqlite DB
+    2. Stream and load live ticks into the same sqlite DB
 """
 import argparse
 import asyncio
